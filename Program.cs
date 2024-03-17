@@ -52,12 +52,26 @@ consumer.Received += (model, ea) =>
 
     if (!response.Result.IsSuccessStatusCode) throw new Exception("Processing failed!");
 
-    var r1 = client.PatchAsJsonAsync($"/Payments/{dto.PaymentId}", new
+    var fast = new HttpClient
     {
-      Status = "ACCEPTED"
-    });
+      BaseAddress = new Uri(apiUrl),
+      Timeout = TimeSpan.FromSeconds(5)
+    };
+    // Process
+    Console.WriteLine("Received message!" + dto.Data.Origin.User.CPF);
+    try
+    {
+      var r1 = fast.PatchAsJsonAsync($"/Payments/{dto.PaymentId}", new
+      {
+        Status = "ACCEPTED"
+      });
 
-    r1.Wait();
+      r1.Start();
+    }
+    catch (Exception)
+    {
+      channel.BasicReject(ea.DeliveryTag, true);
+    }
 
     client.PatchAsJsonAsync(dto.AcknowledgeURL, new
     {
