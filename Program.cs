@@ -36,7 +36,7 @@ Console.WriteLine("[*] Waiting for messages...");
 
 // talvez seja interessante reduzir o throughput.
 EventingBasicConsumer consumer = new(channel);
-consumer.Received += (model, ea) =>
+consumer.Received += async (model, ea) =>
 {
   string serialized = Encoding.UTF8.GetString(ea.Body.ToArray());
   ProcessPaymentDTO? dto = JsonSerializer.Deserialize<ProcessPaymentDTO>(serialized);
@@ -45,21 +45,30 @@ consumer.Received += (model, ea) =>
   {
     if (dto == null) throw new Exception("Invalid message format!");
 
+    var fast = new HttpClient
+    {
+      BaseAddress = new Uri(apiUrl),
+      Timeout = TimeSpan.FromSeconds(5)
+    };
     // Process
     Console.WriteLine("Received message!" + dto.Data.Origin.User.CPF);
-    var response = client.PostAsJsonAsync(dto.ProcessURL, dto.Data);
-    response.Wait();
 
-    if (!response.Result.IsSuccessStatusCode) throw new Exception("Processing failed!");
+    try
+    {
+      var response = await fast.PostAsJsonAsync(dto.ProcessURL, dto.Data);
+      if (!response.IsSuccessStatusCode) throw new Exception("Payment processing failed!");
+    }
+    catch (Exception)
+    {
+      channel.BasicReject(ea.DeliveryTag, true);
+    }
 
-    var r1 = client.PatchAsJsonAsync($"/Payments/{dto.PaymentId}", new
+    await client.PatchAsJsonAsync($"/Payments/{dto.PaymentId}", new
     {
       Status = "ACCEPTED"
     });
 
-    r1.Wait();
-
-    client.PatchAsJsonAsync(dto.AcknowledgeURL, new
+    _ = client.PatchAsJsonAsync(dto.AcknowledgeURL, new
     {
       Id = dto.PaymentId,
       Status = "ACCEPTED"
@@ -75,12 +84,12 @@ consumer.Received += (model, ea) =>
     Console.WriteLine(e.Message);
 
     // ISSO AQUI PODE FALHAR POR CONTA DO MOCK!
-    client.PatchAsJsonAsync($"$/Payments/{dto.PaymentId}", new
+    await client.PatchAsJsonAsync($"$/Payments/{dto.PaymentId}", new
     {
       Status = "REJECTED"
     });
 
-    client.PatchAsJsonAsync(dto.AcknowledgeURL, new
+    await client.PatchAsJsonAsync(dto.AcknowledgeURL, new
     {
       Id = dto.PaymentId,
       Status = "REJECTED"
