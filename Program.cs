@@ -61,6 +61,7 @@ consumer.Received += async (model, ea) =>
     catch (Exception)
     {
       channel.BasicReject(ea.DeliveryTag, true);
+      return;
     }
 
     await client.PatchAsJsonAsync($"/Payments/{dto.PaymentId}", new
@@ -99,6 +100,7 @@ consumer.Received += async (model, ea) =>
   }
 };
 
+channel.BasicQos(0, 50, false);
 channel.BasicConsume(
     queue: queueName,
     autoAck: false,

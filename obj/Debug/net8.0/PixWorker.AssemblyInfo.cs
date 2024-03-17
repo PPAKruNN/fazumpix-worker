@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PixWorker")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e58feb2f208f6d22e3920f1004e1654015e438e1")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+52179d982e2ade3d947f73653f4d4b5b059d8d12")]
 [assembly: System.Reflection.AssemblyProductAttribute("PixWorker")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PixWorker")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
