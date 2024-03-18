@@ -14,6 +14,7 @@ ConnectionFactory factory = new()
   UserName = "rabbit",
   Password = "mq"
 };
+
 IConnection connection = factory.CreateConnection();
 IModel channel = connection.CreateModel();
 channel.QueueDeclare(
@@ -34,7 +35,6 @@ var client = new HttpClient
 Console.WriteLine("[*] Waiting for messages...");
 
 
-// talvez seja interessante reduzir o throughput.
 EventingBasicConsumer consumer = new(channel);
 consumer.Received += async (model, ea) =>
 {
@@ -45,30 +45,20 @@ consumer.Received += async (model, ea) =>
   {
     if (dto == null) throw new Exception("Invalid message format!");
 
-    var fast = new HttpClient
-    {
-      BaseAddress = new Uri(apiUrl),
-      Timeout = TimeSpan.FromSeconds(5)
-    };
     // Process
     Console.WriteLine("Received message!" + dto.Data.Origin.User.CPF);
 
-    try
-    {
-      var response = await fast.PostAsJsonAsync(dto.ProcessURL, dto.Data);
-      if (!response.IsSuccessStatusCode) throw new Exception("Payment processing failed!");
-    }
-    catch (Exception)
-    {
-      channel.BasicReject(ea.DeliveryTag, true);
-      return;
-    }
+    // Webhook destiny (Process) 
+    var response = await client.PostAsJsonAsync(dto.ProcessURL, dto.Data);
+    if (!response.IsSuccessStatusCode) throw new Exception("Payment processing failed!");
 
+    // Update payment status API - DATABASE.
     await client.PatchAsJsonAsync($"/Payments/{dto.PaymentId}", new
     {
       Status = "ACCEPTED"
     });
 
+    // Webhook origin
     _ = client.PatchAsJsonAsync(dto.AcknowledgeURL, new
     {
       Id = dto.PaymentId,
@@ -82,14 +72,15 @@ consumer.Received += async (model, ea) =>
   }
   catch (Exception e)
   {
-    Console.WriteLine(e.Message);
+    Console.WriteLine("Ocorreu um timeout em alguma requisição");
 
-    // ISSO AQUI PODE FALHAR POR CONTA DO MOCK!
+    // Update Payment DB
     await client.PatchAsJsonAsync($"$/Payments/{dto.PaymentId}", new
     {
       Status = "REJECTED"
     });
 
+    // Webhook origin
     await client.PatchAsJsonAsync(dto.AcknowledgeURL, new
     {
       Id = dto.PaymentId,
