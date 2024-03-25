@@ -29,7 +29,11 @@ consumer.Received += async (model, ea) =>
 {
   string serialized = Encoding.UTF8.GetString(ea.Body.ToArray());
   ProcessPaymentDTO? dto = JsonSerializer.Deserialize<ProcessPaymentDTO>(serialized);
-  if (dto == null) throw new Exception("Invalid message format!");
+  if (dto == null)
+  {
+    channel.BasicReject(ea.DeliveryTag, false);
+    throw new Exception("Invalid message format!");
+  }
 
   try
   {
