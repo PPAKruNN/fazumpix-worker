@@ -1,14 +1,12 @@
-## Configurando o Enviroment
-
-Abra o program.cs e altere (Se necessário) as seguintes variavéis:
+### Setting up the Environment
+Open the program.cs file and modify (if necessary) the following variables:
 
 - queueName
-- apiUrl.
-- Connection Factory.
+- apiUrl
+- factory
 
-## Como Rodar?
-
-Você pode iniciar o worker com:
+### How to Run?
+You can start the worker with:
 
 ```bash
 dotnet run
