@@ -7,94 +7,65 @@ using System.Net.Http.Json;
 
 // RabbitMQ consumer configuration.
 string queueName = "payments";
-string apiUrl = "http://localhost:5000";
+string apiUrl = "http://localhost:5000/Payments";
+
 ConnectionFactory factory = new()
 {
   HostName = "localhost",
   UserName = "rabbit",
   Password = "mq"
 };
+
 IConnection connection = factory.CreateConnection();
 IModel channel = connection.CreateModel();
-channel.QueueDeclare(
-    queue: queueName,
-    durable: false,
-    exclusive: false,
-    autoDelete: false,
-    arguments: null
-);
 
-// Consumer logic.
-var client = new HttpClient
-{
-  BaseAddress = new Uri(apiUrl),
-  Timeout = TimeSpan.FromSeconds(120)
-};
+var httpClient = new HttpClient();
 
+// Worker logic.
 Console.WriteLine("[*] Waiting for messages...");
 
-
-// talvez seja interessante reduzir o throughput.
 EventingBasicConsumer consumer = new(channel);
-consumer.Received += (model, ea) =>
+consumer.Received += async (model, ea) =>
 {
   string serialized = Encoding.UTF8.GetString(ea.Body.ToArray());
   ProcessPaymentDTO? dto = JsonSerializer.Deserialize<ProcessPaymentDTO>(serialized);
+  if (dto == null) throw new Exception("Invalid message format!");
 
   try
   {
-    if (dto == null) throw new Exception("Invalid message format!");
-
-    // Process
-    Console.WriteLine("Received message!" + dto.Data.Origin.User.CPF);
-    var response = client.PostAsJsonAsync(dto.ProcessURL, dto.Data);
-    response.Wait();
-
-    if (!response.Result.IsSuccessStatusCode) throw new Exception("Processing failed!");
-
-    var fast = new HttpClient
+    var twoMinuteHttpClient = new HttpClient
     {
-      BaseAddress = new Uri(apiUrl),
-      Timeout = TimeSpan.FromSeconds(5)
+      Timeout = TimeSpan.FromSeconds(120)
     };
-    // Process
+
+    // Process payment on destiny.
     Console.WriteLine("Received message!" + dto.Data.Origin.User.CPF);
-    try
-    {
-      var r1 = fast.PatchAsJsonAsync($"/Payments/{dto.PaymentId}", new
-      {
-        Status = "ACCEPTED"
-      });
+    var response = await twoMinuteHttpClient.PostAsJsonAsync(dto.ProcessURL, dto.Data);
+    if (!response.IsSuccessStatusCode) throw new Exception("Processing failed!");
 
-      r1.Start();
-    }
-    catch (Exception)
-    {
-      channel.BasicReject(ea.DeliveryTag, true);
-    }
+    // Update payment status on database.
+    Console.WriteLine("Received message!" + dto.Data.Origin.User.CPF);
+    await httpClient.PatchAsJsonAsync($"{apiUrl}/{dto.PaymentId}", new { Status = "ACCEPTED" });
 
-    client.PatchAsJsonAsync(dto.AcknowledgeURL, new
+    // Webhook for origin psp, and ack message.
+    _ = httpClient.PatchAsJsonAsync(dto.AcknowledgeURL, new
     {
       Id = dto.PaymentId,
       Status = "ACCEPTED"
     });
 
-    // Respond
-    Console.WriteLine("Processed payment!");
     channel.BasicAck(ea.DeliveryTag, false);
-
+    Console.WriteLine("Processed payment!");
   }
   catch (Exception e)
   {
     Console.WriteLine(e.Message);
 
-    // ISSO AQUI PODE FALHAR POR CONTA DO MOCK!
-    client.PatchAsJsonAsync($"$/Payments/{dto.PaymentId}", new
-    {
-      Status = "REJECTED"
-    });
+    // Update payment status on database.
+    await httpClient.PatchAsJsonAsync($"{apiUrl}/{dto.PaymentId}", new { Status = "REJECTED" });
 
-    client.PatchAsJsonAsync(dto.AcknowledgeURL, new
+    // Webhook for origin psp, and Nack message.
+    _ = httpClient.PatchAsJsonAsync(dto.AcknowledgeURL, new
     {
       Id = dto.PaymentId,
       Status = "REJECTED"
